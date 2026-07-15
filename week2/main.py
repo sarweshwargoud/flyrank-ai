@@ -1,18 +1,19 @@
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, HTTPException, status, Response
 from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    description="A simple CRUD API built using FastAPI for managing tasks.",
+    version="1.0.0"
+)
 
 # -----------------------------
-# Request Model
+# Request Models
 # -----------------------------
 class TaskCreate(BaseModel):
     title: str
 
 
-# -----------------------------
-# Update Model
-# -----------------------------
 class TaskUpdate(BaseModel):
     title: str
     done: bool
@@ -43,7 +44,11 @@ tasks = [
 # -----------------------------
 # Root Endpoint
 # -----------------------------
-@app.get("/")
+@app.get(
+    "/",
+    summary="API Information",
+    description="Returns basic information about the Task API."
+)
 def home():
     return {
         "name": "Task API",
@@ -52,23 +57,42 @@ def home():
     }
 
 
-# Health Check Endpoint
-@app.get("/health")
+# -----------------------------
+# Health Check
+# -----------------------------
+@app.get(
+    "/health",
+    summary="Health Check",
+    description="Checks whether the API server is running."
+)
 def health_check():
     return {
         "status": "ok"
     }
 
 
+# -----------------------------
 # Get All Tasks
-@app.get("/tasks")
+# -----------------------------
+@app.get(
+    "/tasks",
+    summary="Get All Tasks",
+    description="Returns all tasks stored in the in-memory database."
+)
 def get_tasks():
     return tasks
 
 
+# -----------------------------
 # Get Single Task
-@app.get("/tasks/{task_id}")
+# -----------------------------
+@app.get(
+    "/tasks/{task_id}",
+    summary="Get Task By ID",
+    description="Returns a single task using its ID."
+)
 def get_task(task_id: int):
+
     for task in tasks:
         if task["id"] == task_id:
             return task
@@ -79,9 +103,17 @@ def get_task(task_id: int):
     )
 
 
+# -----------------------------
 # Create Task
-@app.post("/tasks", status_code=status.HTTP_201_CREATED)
+# -----------------------------
+@app.post(
+    "/tasks",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Task",
+    description="Creates a new task with a unique ID and marks it as not completed."
+)
 def create_task(task: TaskCreate):
+
     if task.title.strip() == "":
         raise HTTPException(
             status_code=400,
@@ -89,18 +121,28 @@ def create_task(task: TaskCreate):
         )
 
     new_id = max((task["id"] for task in tasks), default=0) + 1
+
     new_task = {
         "id": new_id,
         "title": task.title,
         "done": False
     }
+
     tasks.append(new_task)
+
     return new_task
 
 
+# -----------------------------
 # Update Task
-@app.put("/tasks/{task_id}")
+# -----------------------------
+@app.put(
+    "/tasks/{task_id}",
+    summary="Update Task",
+    description="Updates the title and completion status of an existing task."
+)
 def update_task(task_id: int, updated_task: TaskUpdate):
+
     if updated_task.title.strip() == "":
         raise HTTPException(
             status_code=400,
@@ -108,9 +150,12 @@ def update_task(task_id: int, updated_task: TaskUpdate):
         )
 
     for task in tasks:
+
         if task["id"] == task_id:
+
             task["title"] = updated_task.title
             task["done"] = updated_task.done
+
             return task
 
     raise HTTPException(
@@ -119,13 +164,24 @@ def update_task(task_id: int, updated_task: TaskUpdate):
     )
 
 
+# -----------------------------
 # Delete Task
-@app.delete("/tasks/{task_id}", status_code=204)
+# -----------------------------
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Task",
+    description="Deletes a task from the in-memory database."
+)
 def delete_task(task_id: int):
+
     for task in tasks:
+
         if task["id"] == task_id:
+
             tasks.remove(task)
-            return Response(status_code=204)
+
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     raise HTTPException(
         status_code=404,
