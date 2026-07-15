@@ -3,7 +3,15 @@ from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
-def hello():
+def home():
     return {
-        "message": "Hello, World!"
+        "name": "Task API",
+        "version": "1.0",
+        "endpoints": ["/tasks"]
+    }
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "ok"
     }
