@@ -31,7 +31,7 @@ Navigate to the required week's folder and install the dependencies.
 pip install -r requirements.txt
 ```
 
-Start the FastAPI server.
+Start the FastAPI server
 
 ```bash
 uvicorn main:app --reload
