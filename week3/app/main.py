@@ -1,60 +1,52 @@
-def display_menu() -> None:
-    print("\nSimple Calculator")
-    print("------------------")
-    print("1) Add")
-    print("2) Subtract")
-    print("3) Multiply")
-    print("4) Divide")
-    print("5) Exit")
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from app.database import init_db
+from app.routes import router as task_router
 
 
-def get_number(prompt: str) -> float:
-    while True:
-        value = input(prompt).strip()
-        try:
-            return float(value)
-        except ValueError:
-            print("Invalid number. Please enter a valid numeric value.")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize the SQLite database and seed initial values on startup
+    init_db()
+    yield
 
 
-def calculate(choice: str, a: float, b: float) -> float:
-    if choice == "1":
-        return a + b
-    if choice == "2":
-        return a - b
-    if choice == "3":
-        return a * b
-    if choice == "4":
-        if b == 0:
-            raise ZeroDivisionError("Cannot divide by zero")
-        return a / b
-    raise ValueError("Invalid operation")
+app = FastAPI(
+    title="Task API",
+    description="A simple CRUD API backed by SQLite for managing tasks.",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Register routes
+app.include_router(task_router)
 
 
-def main() -> None:
-    while True:
-        display_menu()
-        choice = input("Choose an operation (1-5): ").strip()
-
-        if choice == "5":
-            print("Goodbye!")
-            break
-
-        if choice not in {"1", "2", "3", "4"}:
-            print("Please choose a number between 1 and 5.")
-            continue
-
-        first = get_number("Enter the first number: ")
-        second = get_number("Enter the second number: ")
-
-        try:
-            result = calculate(choice, first, second)
-            print(f"Result: {result}\n")
-        except ZeroDivisionError as error:
-            print(f"Error: {error}\n")
-        except ValueError as error:
-            print(f"Error: {error}\n")
+# -----------------------------
+# Root Endpoint
+# -----------------------------
+@app.get(
+    "/",
+    summary="API Information",
+    description="Returns basic information about the Task API."
+)
+def home():
+    return {
+        "name": "Task API",
+        "version": "1.0",
+        "endpoints": ["/tasks"]
+    }
 
 
-if __name__ == "__main__":
-    main()
+# -----------------------------
+# Health Check
+# -----------------------------
+@app.get(
+    "/health",
+    summary="Health Check",
+    description="Checks whether the API server is running."
+)
+def health_check():
+    return {
+        "status": "ok"
+    }

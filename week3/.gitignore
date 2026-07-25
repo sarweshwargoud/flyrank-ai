@@ -2,3 +2,7 @@
 __pycache__/
 .venv/
 .env.example
+tasks.db
+tasks.db-journal
+tasks.db-wal
+tasks.db-shm
