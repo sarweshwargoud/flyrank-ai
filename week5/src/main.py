@@ -10,16 +10,23 @@ from typing import List, Tuple, Dict, Any, Optional
 import requests
 from bs4 import BeautifulSoup
 
-# Ensure UTF-8 output on Windows consoles
+# Constants
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from src.models import BookRecord, validate_and_normalize_record
+
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-
-# Constants
-BASE_DIR = Path(__file__).resolve().parent.parent
 CACHE_DIR = BASE_DIR / "cache"
+OUTPUT_DIR = BASE_DIR / "output"
+BOOKS_OUTPUT_FILE = OUTPUT_DIR / "books.json"
+ERRORS_OUTPUT_FILE = OUTPUT_DIR / "errors.json"
+
 START_URL = "https://books.toscrape.com/catalogue/page-1.html"
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/sarweshwargoud/flyrank-ai)"
 REQUEST_TIMEOUT = 10.0
@@ -32,8 +39,6 @@ def get_cache_filename_for_url(url: str, is_catalogue: bool = False, page_num: i
     if is_catalogue:
         return f"catalogue-page-{page_num}.html"
     
-    # For detail pages, derive clean slug from URL
-    # e.g., 'a-light-in-the-attic_1000' from '.../catalogue/a-light-in-the-attic_1000/index.html'
     parts = url.rstrip("/").split("/")
     if parts[-1] == "index.html" and len(parts) >= 2:
         slug = parts[-2]
@@ -187,45 +192,84 @@ def parse_book_detail(html: str, product_url: str, source_page: str, fetched_at:
     }
 
 
-def scrape_all_book_details(discovered_items: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+def scrape_and_validate_all(discovered_items: List[Dict[str, str]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Fetches and extracts raw records for all discovered book items.
+    Fetches, extracts, normalizes, and validates records for all discovered items.
+    Enforces deduplication using canonical product_url.
+    Returns (valid_records, invalid_records).
     """
-    raw_records = []
-    
+    valid_records = []
+    invalid_records = []
+    seen_canonical_urls = set()
+
     for item in discovered_items:
         product_url = item["product_url"]
         source_page = item["source_page"]
-        
+
+        # Deduplication check
+        if product_url in seen_canonical_urls:
+            continue
+        seen_canonical_urls.add(product_url)
+
         cache_filename = get_cache_filename_for_url(product_url)
         fetch_time = datetime.now(timezone.utc).isoformat()
-        
+
         html, _ = fetch_page_with_cache(product_url, cache_filename)
-        record = parse_book_detail(
+        raw_record = parse_book_detail(
             html=html,
             product_url=product_url,
             source_page=source_page,
             fetched_at=fetch_time
         )
-        raw_records.append(record)
-        
-    return raw_records
+
+        # Stage 4: Normalize & Validate with Pydantic
+        validated_record, error_reason = validate_and_normalize_record(raw_record)
+        if validated_record:
+            valid_records.append(validated_record.model_dump())
+        else:
+            invalid_records.append({
+                "raw_record": raw_record,
+                "error": error_reason
+            })
+
+    return valid_records, invalid_records
+
+
+def save_output_files(valid_records: List[Dict[str, Any]], invalid_records: List[Dict[str, Any]]) -> None:
+    """
+    Saves validated records to output/books.json and errors to output/errors.json idempotently.
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    with open(BOOKS_OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(valid_records, f, indent=2, ensure_ascii=False)
+
+    with open(ERRORS_OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(invalid_records, f, indent=2, ensure_ascii=False)
 
 
 def main():
-    print("=== FlyRank Polite Scraper (Stage 3) ===")
+    print("=== FlyRank Polite Scraper (Stage 4) ===")
     
     # Step 1: Discover catalogue
     pages_count, discovered_items = discover_catalogue(START_URL, max_pages=MAX_CATALOGUE_PAGES)
     print(f"\ncatalogue_pages={pages_count} discovered={len(discovered_items)} unique_urls={len(discovered_items)}\n")
     
-    # Step 2: Extract details for all books
-    raw_records = scrape_all_book_details(discovered_items)
+    # Step 2: Scrape, normalize, validate
+    valid_records, invalid_records = scrape_and_validate_all(discovered_items)
     
-    print(f"\ndetail_pages={len(raw_records)}")
-    print("\n--- Complete Raw Record Example (8 Fields) ---")
-    if raw_records:
-        print(json.dumps(raw_records[0], indent=2, ensure_ascii=False))
+    # Step 3: Save to output files
+    save_output_files(valid_records, invalid_records)
+    
+    # Checkpoint output
+    unique_product_urls = len(set(r["product_url"] for r in valid_records))
+    print(f"\nvalid_records={len(valid_records)}")
+    print(f"invalid_records={len(invalid_records)}")
+    print(f"unique_urls={unique_product_urls}")
+    
+    print("\n--- Complete Normalized Record Example ---")
+    if valid_records:
+        print(json.dumps(valid_records[0], indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
