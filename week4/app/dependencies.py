@@ -1,28 +1,31 @@
 from typing import Optional, Dict, Any
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.auth import supabase
 
+# HTTPBearer scheme creates the Authorize padlock button in Swagger UI (/docs)
+http_bearer = HTTPBearer(auto_error=False)
 
-def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer)
+) -> Dict[str, Any]:
     """
-    Reusable FastAPI authentication dependency.
-    Extracts the Bearer token from the Authorization header,
-    verifies it against Supabase Auth, and returns the authenticated user data.
+    Reusable FastAPI authentication dependency with OpenAPI HTTPBearer integration.
+    Extracts and validates the Bearer token against Supabase Auth.
     """
-    if not authorization or not authorization.strip().startswith("Bearer "):
+    if not credentials or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Access token required"
         )
 
-    parts = authorization.strip().split(" ", 1)
-    if len(parts) != 2 or not parts[1].strip():
+    token = credentials.credentials.strip()
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Access token required"
         )
-
-    token = parts[1].strip()
 
     try:
         user_response = supabase.auth.get_user(token)
