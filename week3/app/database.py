@@ -1,70 +1,68 @@
 import os
-import sqlite3
+from typing import Optional
+from dotenv import load_dotenv
+import psycopg
+from psycopg.rows import dict_row
 
-# Define database file path inside week3 directory
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "tasks.db")
+# Load environment variables from .env file
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:dev@localhost:5432/tasks")
 
 
-def get_connection() -> sqlite3.Connection:
+def get_connection():
     """
-    Creates and returns a connection to the SQLite database.
-    Sets row_factory to sqlite3.Row to allow column access by name.
+    Creates and returns a connection to the PostgreSQL database.
+    Uses dict_row row factory to allow dict-like column access.
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
 def init_db() -> None:
     """
-    Initializes the database by creating the tasks table and index,
+    Initializes the PostgreSQL database by creating the tasks table and indexes,
     and seeding three default tasks if the table is empty.
-    All seeding is wrapped in a transaction.
+    All operations are committed in a safe transaction.
     """
     conn = get_connection()
     try:
-        # Enable write-ahead logging (WAL) for better concurrent performance
-        conn.execute("PRAGMA journal_mode=WAL;")
+        with conn.cursor() as cur:
+            # Create tasks table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    done BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
-        # Create tasks table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                done INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
+            # Create indexes for filtering and searching
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_title ON tasks(title);")
 
-        # Add index for search/filtering optimization (Stretch Goal)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_title ON tasks(title);")
+            # Check if seeding is required (seed-once rule)
+            cur.execute("SELECT COUNT(*) AS count FROM tasks;")
+            row = cur.fetchone()
+            count = row["count"] if row else 0
 
-        # Check if seeding is required
-        cursor = conn.execute("SELECT COUNT(*) FROM tasks;")
-        count = cursor.fetchone()[0]
-
-        if count == 0:
-            # Seed default tasks inside a transaction (Stretch Goal)
-            conn.execute("BEGIN TRANSACTION;")
-            conn.execute(
-                "INSERT INTO tasks (title, done) VALUES (?, ?);",
-                ("Learn FastAPI", 0),
-            )
-            conn.execute(
-                "INSERT INTO tasks (title, done) VALUES (?, ?);",
-                ("Build CRUD API", 0),
-            )
-            conn.execute(
-                "INSERT INTO tasks (title, done) VALUES (?, ?);",
-                ("Submit Assignment", 1),
-            )
-            conn.commit()
-            print("[OK] Database initialized and seeded successfully.")
-        else:
-            print("[OK] Database already initialized.")
+            if count == 0:
+                # Seed default tasks
+                seed_tasks = [
+                    ("Learn FastAPI", False),
+                    ("Build CRUD API", False),
+                    ("Submit Assignment", True),
+                ]
+                cur.executemany(
+                    "INSERT INTO tasks (title, done) VALUES (%s, %s);",
+                    seed_tasks,
+                )
+                conn.commit()
+                print("[OK] PostgreSQL database initialized and seeded successfully.")
+            else:
+                conn.commit()
+                print(f"[OK] Database already initialized with {count} tasks.")
 
     except Exception as e:
         conn.rollback()
