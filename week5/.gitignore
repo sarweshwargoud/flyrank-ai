@@ -1,0 +1,13 @@
+# Cache directory - do not commit scraped HTML files
+cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Pytest
+.pytest_cache/
