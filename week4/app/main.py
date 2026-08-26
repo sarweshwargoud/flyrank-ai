@@ -149,15 +149,15 @@ def login(body: AuthRequest):
 
 
 # -------------------------------------------------------------
-# Protected Route Placeholder (Stage 2: unverified header check)
+# Protected Route with Supabase JWT Verification (Stage 3)
 # -------------------------------------------------------------
 @app.get(
     "/protected/profile",
     status_code=status.HTTP_200_OK,
-    summary="User Profile (Unverified Guard)",
-    description="Protected endpoint checking token presence in Authorization header."
+    summary="User Profile",
+    description="Protected endpoint verified via Supabase Auth JWT token."
 )
-def protected_profile_unverified(authorization: Optional[str] = Header(None)):
+def protected_profile(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.strip().startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -171,6 +171,26 @@ def protected_profile_unverified(authorization: Optional[str] = Header(None)):
             detail="Access token required"
         )
 
-    return {
-        "message": "Token present (unverified profile placeholder)"
-    }
+    token = parts[1].strip()
+
+    try:
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        user = user_response.user
+        return {
+            "id": user.id,
+            "email": user.email,
+            "created_at": str(user.created_at) if user.created_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
