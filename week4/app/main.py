@@ -1,9 +1,10 @@
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Request, Header, status
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Request, Depends, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.auth import supabase
 from app.models import AuthRequest
+from app.dependencies import get_current_user
 
 app = FastAPI(
     title="FlyRank Week 4 Auth API",
@@ -76,7 +77,7 @@ def public_info():
 
 
 # -------------------------------------------------------------
-# Auth Endpoints (Stage 1)
+# Auth Endpoints (Stage 1 & 4)
 # -------------------------------------------------------------
 @app.post(
     "/auth/signup",
@@ -148,49 +149,46 @@ def login(body: AuthRequest):
         )
 
 
+@app.post(
+    "/auth/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="User Logout",
+    description="Terminates the user's session with Supabase Auth."
+)
+def logout(current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        supabase.auth.sign_out()
+    except Exception:
+        pass
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # -------------------------------------------------------------
-# Protected Route with Supabase JWT Verification (Stage 3)
+# Protected Endpoints using Reusable Dependency (Stage 4)
 # -------------------------------------------------------------
 @app.get(
     "/protected/profile",
     status_code=status.HTTP_200_OK,
     summary="User Profile",
-    description="Protected endpoint verified via Supabase Auth JWT token."
+    description="Protected endpoint returning authenticated user profile information."
 )
-def protected_profile(authorization: Optional[str] = Header(None)):
-    if not authorization or not authorization.strip().startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token required"
-        )
+def protected_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
+    return {
+        "id": current_user["id"],
+        "email": current_user["email"],
+        "created_at": current_user["created_at"]
+    }
 
-    parts = authorization.strip().split(" ", 1)
-    if len(parts) != 2 or not parts[1].strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token required"
-        )
 
-    token = parts[1].strip()
-
-    try:
-        user_response = supabase.auth.get_user(token)
-        if not user_response or not user_response.user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-
-        user = user_response.user
-        return {
-            "id": user.id,
-            "email": user.email,
-            "created_at": str(user.created_at) if user.created_at else None
-        }
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
+@app.get(
+    "/protected/dashboard",
+    status_code=status.HTTP_200_OK,
+    summary="User Dashboard",
+    description="Second protected endpoint demonstrating auth dependency reuse."
+)
+def protected_dashboard(current_user: Dict[str, Any] = Depends(get_current_user)):
+    return {
+        "message": "Welcome to your protected dashboard!",
+        "user_id": current_user["id"],
+        "email": current_user["email"]
+    }
