@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Header, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.auth import supabase
@@ -57,6 +57,21 @@ def health_check():
     return {
         "status": "ok",
         "supabase": "connected" if supabase else "disconnected"
+    }
+
+
+# -------------------------------------------------------------
+# Public Endpoint (Stage 2)
+# -------------------------------------------------------------
+@app.get(
+    "/public/info",
+    status_code=status.HTTP_200_OK,
+    summary="Public Information",
+    description="Public endpoint accessible without authentication."
+)
+def public_info():
+    return {
+        "message": "Welcome stranger! This info is public."
     }
 
 
@@ -131,3 +146,31 @@ def login(body: AuthRequest):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid login credentials"
         )
+
+
+# -------------------------------------------------------------
+# Protected Route Placeholder (Stage 2: unverified header check)
+# -------------------------------------------------------------
+@app.get(
+    "/protected/profile",
+    status_code=status.HTTP_200_OK,
+    summary="User Profile (Unverified Guard)",
+    description="Protected endpoint checking token presence in Authorization header."
+)
+def protected_profile_unverified(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.strip().startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token required"
+        )
+
+    parts = authorization.strip().split(" ", 1)
+    if len(parts) != 2 or not parts[1].strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token required"
+        )
+
+    return {
+        "message": "Token present (unverified profile placeholder)"
+    }
